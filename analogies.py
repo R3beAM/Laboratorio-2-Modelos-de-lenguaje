@@ -193,4 +193,27 @@ def most_similar(
     return [(words[int(idx)], float(similarities[int(idx)])) for idx in best_indices]
 
 
-__all__ = ["solve_analogy", "most_similar"]
+def find_most_similar(
+    word: str,
+    embeddings: Mapping[str, VectorLike],
+    *,
+    top_n: int = 5,
+) -> List[Tuple[str, float]]:
+    """Backward compatible wrapper for :func:`most_similar`.
+
+    Historically the helper that exposes the behaviour of :func:`most_similar`
+    was named ``find_most_similar`` in course materials. Some notebooks still
+    import or call it with that name.  To keep those references working we
+    expose a thin wrapper that simply forwards the call to
+    :func:`most_similar`.
+
+    Parameters
+    ----------
+    word, embeddings, top_n:
+        Passed directly to :func:`most_similar`.
+    """
+
+    return most_similar(word, embeddings, top_n=top_n)
+
+
+__all__ = ["solve_analogy", "most_similar", "find_most_similar"]
