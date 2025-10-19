@@ -1,12 +1,28 @@
 """Utilities for solving word analogies using NumPy vectors."""
 from __future__ import annotations
 
-from typing import Mapping, Sequence, Tuple, Union, List
+import argparse
+import sys
+from pathlib import Path
+from typing import Iterable, Mapping, MutableMapping, Sequence, Tuple, Union, List
 
 import numpy as np
 
 
 VectorLike = Union[Sequence[float], np.ndarray]
+
+
+# A tiny default embedding space that can be used for quick demonstrations.
+_DEFAULT_EMBEDDINGS = {
+    "man": np.array([1.0, 0.0, 0.0]),
+    "woman": np.array([1.0, 1.0, 0.0]),
+    "king": np.array([2.0, 0.0, 1.0]),
+    "queen": np.array([2.0, 1.0, 1.0]),
+    "prince": np.array([2.0, -1.0, 1.0]),
+    "cat": np.array([1.0, 0.0, 0.0]),
+    "dog": np.array([0.8, 0.2, 0.0]),
+    "tiger": np.array([1.0, -0.1, 0.1]),
+}
 
 
 def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
@@ -216,4 +232,120 @@ def find_most_similar(
     return most_similar(word, embeddings, top_n=top_n)
 
 
-__all__ = ["solve_analogy", "most_similar", "find_most_similar"]
+def _load_embeddings_from_lines(lines: Iterable[str]) -> MutableMapping[str, np.ndarray]:
+    """Parse simple text embeddings from ``lines``.
+
+    Each non-empty, non-comment line must contain a token followed by one or
+    more floating point values separated by whitespace.  The token becomes the
+    key and the values define the embedding vector.
+    """
+
+    embeddings: MutableMapping[str, np.ndarray] = {}
+    for lineno, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = line.split()
+        if len(parts) < 2:
+            raise ValueError(
+                f"Line {lineno} does not contain enough values to build an embedding."
+            )
+        word, *values = parts
+        try:
+            vector = np.array([float(value) for value in values], dtype=np.float64)
+        except ValueError as exc:  # pragma: no cover - defensive programming
+            raise ValueError(f"Line {lineno} contains non-numeric values") from exc
+
+        embeddings[word] = vector
+
+    if not embeddings:
+        raise ValueError("No embeddings were loaded from the provided source.")
+
+    return embeddings
+
+
+def _load_embeddings(path: Path | None) -> MutableMapping[str, np.ndarray]:
+    """Load embeddings from ``path`` or return built-in defaults."""
+
+    if path is None:
+        return dict(_DEFAULT_EMBEDDINGS)
+
+    with path.open("r", encoding="utf8") as file:
+        return _load_embeddings_from_lines(file)
+
+
+def _format_results(results: Union[str, List[Tuple[str, float]]]) -> str:
+    """Pretty print helper for command line usage."""
+
+    if isinstance(results, str):
+        return results
+
+    return "\n".join(f"{word}\t{score:.4f}" for word, score in results)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Utilities for solving analogies and finding similar words."
+    )
+    parser.add_argument(
+        "--embeddings",
+        type=Path,
+        help=(
+            "Optional path to a whitespace separated embeddings file. "
+            "When omitted a tiny built-in demo embedding is used."
+        ),
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    solve_parser = subparsers.add_parser(
+        "solve", help="Solve an analogy of the form A : B :: C : ?"
+    )
+    solve_parser.add_argument("word_a")
+    solve_parser.add_argument("word_b")
+    solve_parser.add_argument("word_c")
+    solve_parser.add_argument(
+        "--top-k", type=int, default=1, help="Number of candidate answers to show."
+    )
+
+    similar_parser = subparsers.add_parser(
+        "similar", help="List the words most similar to the provided token."
+    )
+    similar_parser.add_argument("word")
+    similar_parser.add_argument(
+        "--top-n", type=int, default=5, help="Number of similar words to show."
+    )
+
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        embeddings = _load_embeddings(args.embeddings)
+        if args.command == "solve":
+            results = solve_analogy(
+                args.word_a,
+                args.word_b,
+                args.word_c,
+                embeddings,
+                top_k=args.top_k,
+            )
+        else:
+            results = most_similar(args.word, embeddings, top_n=args.top_n)
+    except Exception as exc:  # pragma: no cover - thin CLI wrapper
+        parser.error(str(exc))
+        return 2
+
+    print(_format_results(results))
+    return 0
+
+
+__all__ = ["solve_analogy", "most_similar", "find_most_similar", "main"]
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised manually
+    sys.exit(main())
