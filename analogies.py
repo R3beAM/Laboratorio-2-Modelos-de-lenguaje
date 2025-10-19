@@ -284,6 +284,48 @@ def _format_results(results: Union[str, List[Tuple[str, float]]]) -> str:
     return "\n".join(f"{word}\t{score:.4f}" for word, score in results)
 
 
+def _strip_ipython_args(argv: Sequence[str]) -> list[str]:
+    """Remove arguments injected by interactive IPython kernels.
+
+    When ``main`` is executed from inside Jupyter/Colab the runtime adds a
+    ``-f`` flag pointing to the kernel connection file. ``argparse`` interprets
+    that positional value as our required sub-command which leads to the
+    ``invalid choice`` error reported in the issue.  We silently drop those
+    kernel management arguments so that the CLI behaves the same way as when it
+    is invoked from a regular shell.
+    """
+
+    cleaned: list[str] = []
+    skip_next = False
+
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            # ``-f`` is immediately followed by the connection file path.
+            if token.endswith(".json") and "kernel" in Path(token).name:
+                continue
+            cleaned.append(token)
+            continue
+
+        if token == "-f":
+            skip_next = True
+            continue
+
+        if token.startswith("-f="):
+            value = token.split("=", 1)[1]
+            if value.endswith(".json") and "kernel" in Path(value).name:
+                continue
+            cleaned.append(token)
+            continue
+
+        if token.endswith(".json") and "kernel" in Path(token).name:
+            continue
+
+        cleaned.append(token)
+
+    return cleaned
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Utilities for solving analogies and finding similar words."
@@ -322,7 +364,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    parsed_argv = list(argv) if argv is not None else sys.argv[1:]
+    sanitized_argv = _strip_ipython_args(parsed_argv)
+
+    if not sanitized_argv:
+        parser.print_help()
+        return 0
+
+    args = parser.parse_args(sanitized_argv)
 
     try:
         embeddings = _load_embeddings(args.embeddings)
