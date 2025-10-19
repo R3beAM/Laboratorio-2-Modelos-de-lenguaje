@@ -116,4 +116,81 @@ def solve_analogy(
     return [(words[int(idx)], float(similarities[int(idx)])) for idx in best_indices]
 
 
-__all__ = ["solve_analogy"]
+def most_similar(
+    word: str,
+    embeddings: Mapping[str, VectorLike],
+    *,
+    top_n: int = 5,
+) -> List[Tuple[str, float]]:
+    """Return the ``top_n`` words most similar to ``word`` using cosine similarity.
+
+    Parameters
+    ----------
+    word:
+        Reference word whose neighbours we want to retrieve. It must be present
+        in ``embeddings``.
+    embeddings:
+        Mapping from words to vector representations. All vectors must share the
+        same dimensionality. Any ``Sequence`` convertible to a NumPy array is
+        accepted.
+    top_n:
+        Number of similar words to retrieve. Must be at least 1.
+
+    Returns
+    -------
+    list of (str, float)
+        A list with the closest words and their cosine similarity to ``word``
+        ordered from most to least similar.
+
+    Raises
+    ------
+    ValueError
+        If ``word`` is missing, the vectors have inconsistent dimensions or
+        ``top_n`` is less than 1.
+    """
+
+    if top_n < 1:
+        raise ValueError("top_n must be greater than or equal to 1")
+
+    if word not in embeddings:
+        raise ValueError(f"Word '{word}' not found in the embeddings.")
+
+    words: List[str] = []
+    vectors: List[np.ndarray] = []
+    vector_length = None
+
+    for current_word, vector in embeddings.items():
+        arr = np.asarray(vector, dtype=np.float64)
+        if arr.ndim != 1:
+            raise ValueError("Embedding vectors must be one-dimensional.")
+        if vector_length is None:
+            vector_length = arr.shape[0]
+        elif arr.shape[0] != vector_length:
+            raise ValueError("All embedding vectors must share the same length.")
+        words.append(current_word)
+        vectors.append(arr)
+
+    matrix = np.vstack(vectors)
+    normalized_matrix = _normalize_rows(matrix)
+
+    word_to_index = {current_word: idx for idx, current_word in enumerate(words)}
+    reference_vector = normalized_matrix[word_to_index[word]]
+
+    similarities = normalized_matrix @ reference_vector
+
+    # Exclude the reference word from the results by setting its similarity to
+    # negative infinity.
+    similarities[word_to_index[word]] = -np.inf
+
+    available_candidates = len(words) - 1
+    top_n = min(top_n, available_candidates)
+    if top_n <= 0:
+        raise ValueError("Not enough candidate words to compute similarities.")
+
+    best_indices = np.argpartition(-similarities, top_n - 1)[:top_n]
+    best_indices = best_indices[np.argsort(-similarities[best_indices])]
+
+    return [(words[int(idx)], float(similarities[int(idx)])) for idx in best_indices]
+
+
+__all__ = ["solve_analogy", "most_similar"]

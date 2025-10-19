@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from analogies import solve_analogy
+from analogies import solve_analogy, most_similar
 
 
 class SolveAnalogyTests(unittest.TestCase):
@@ -44,6 +44,29 @@ class SolveAnalogyTests(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             solve_analogy("a", "b", "c", embeddings)
+
+
+class MostSimilarTests(unittest.TestCase):
+    def setUp(self):
+        self.embeddings = {
+            "cat": np.array([1.0, 0.0, 0.0]),
+            "dog": np.array([0.8, 0.2, 0.0]),
+            "tiger": np.array([1.0, -0.1, 0.1]),
+            "car": np.array([-1.0, 0.0, 0.0]),
+        }
+
+    def test_returns_expected_top_n(self):
+        results = most_similar("cat", self.embeddings, top_n=2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0][0], "tiger")
+
+    def test_missing_reference_word(self):
+        with self.assertRaises(ValueError):
+            most_similar("lion", self.embeddings)
+
+    def test_invalid_top_n(self):
+        with self.assertRaises(ValueError):
+            most_similar("cat", self.embeddings, top_n=0)
 
 
 if __name__ == "__main__":
